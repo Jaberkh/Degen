@@ -41,7 +41,7 @@ export const app = new Frog({
     apiUrl: "https://hubs.airstack.xyz",
     fetchOptions: {
       headers: {
-        "x-airstack-hubs": AIRSTACK_API_KEY, // استفاده از کلید API
+        "x-airstack-hubs": AIRSTACK_API_KEY,
       },
     },
   },
@@ -61,7 +61,7 @@ app.use("/*", serveStatic({ root: "./public" }));
 // مقدار پیش‌فرض fid
 const defaultFid = "50000";
 
-// تعریف نوع پاسخ جدید برای Points API
+// نوع پاسخ برای Points API
 interface PointsAPIResponse {
   fid: string;
   wallet_address: string;
@@ -80,17 +80,16 @@ const getPointsByWallet = async (wallet: string): Promise<string | null> => {
     const data = (await response.json()) as PointsAPIResponse[];
 
     if (Array.isArray(data) && data.length > 0) {
-      const points = data[0].points; // فرض می‌کنیم اولین آیتم آرایه مدنظر است
-      return points;
+      return data[0].points;
     } else {
-      return null; // No points found
+      return null;
     }
   } catch (error) {
     console.error(
       `Error fetching points for wallet ${wallet}:`,
       (error as Error).message
     );
-    return null; // Error occurred
+    return null;
   }
 };
 
@@ -103,7 +102,7 @@ const getTodayAllowance = async (
   tipped: string;
 }> => {
   const apiUrl = `https://api.degen.tips/airdrop2/allowances?fid=${fid}`;
-  const todayDate = new Date().toISOString().split("T")[0]; // تاریخ امروز به فرمت YYYY-MM-DD
+  const todayDate = new Date().toISOString().split("T")[0];
   let tipAllowance = "0";
   let remainingTipAllowance = "0";
   let tipped = "0";
@@ -113,17 +112,13 @@ const getTodayAllowance = async (
     const data = await response.json();
 
     if (Array.isArray(data)) {
-      // فیلتر کردن داده‌های امروز
       const todayAllowance = data.find((item: { snapshot_day?: string }) =>
         item.snapshot_day?.startsWith(todayDate)
       );
 
       if (todayAllowance) {
-        // مقدار تیپ‌هایی که امروز داده شده
         tipAllowance = todayAllowance.tip_allowance || "0";
         remainingTipAllowance = todayAllowance.remaining_tip_allowance || "0";
-
-        // محاسبه تعداد تیپ‌هایی که امروز داده شده
         const totalTipped =
           Number(tipAllowance) - Number(remainingTipAllowance);
 
@@ -141,68 +136,128 @@ const getTodayAllowance = async (
   return { tipAllowance, remainingTipAllowance, tipped };
 };
 
-// تغییر در تابع frame برای پاکسازی افرادی که از کاربر فعلی فریم تیپ گرفته‌اند
+// تابع frame
 app.frame("/", async (c) => {
-  const { buttonValue } = c;
-  const showFid = buttonValue === "my_state";
-
-  console.log("Request is being validated by Airstack...");
-
-  // دریافت متغیرهای interactor از Neynar
-  const userData = c.var as NeynarVariables;
-  const {
-    username,
-    pfpUrl,
-    fid: interactorFid,
-    custodyAddress,
-    verifiedAddresses,
-  } = userData.interactor || {};
-
-  // مقدار fid پیش‌فرض
+  // مقادیر پیش‌فرض
   let fid = defaultFid;
-  if (interactorFid) {
-    fid = interactorFid.toString();
-  }
+  let username = "unknown";
+  let remainingTipAllowance = "N/A";
+  let tipAllowance = "N/A";
+  let tipped = "N/A";
+  let displayPoints = "N/A";
 
-  // دریافت Allowance برای fid
-  const { tipAllowance, remainingTipAllowance, tipped } =
-    await getTodayAllowance(fid);
+  // بررسی وجود پارامترهای embeds[] در URL
+  const embeds = c.req.query()["embeds[]"];
+  if (embeds) {
+    try {
+      const decodedUrl = decodeURIComponent(embeds);
+      const embedUrl = new URL(decodedUrl);
 
-  // استخراج و بررسی تمام آدرس‌های کاربر
-  const wallets: string[] = [];
-  if (verifiedAddresses?.ethAddresses) {
-    wallets.push(...verifiedAddresses.ethAddresses);
-  }
-  if (custodyAddress) {
-    wallets.push(custodyAddress);
-  }
+      // استخراج پارامترها از URL
+      const embedParams = Object.fromEntries(embedUrl.searchParams.entries());
+      console.log("Extracted Parameters from embeds[]:", embedParams);
 
-  let displayPoints = "N/A"; // مقدار پیش‌فرض برای Points
+      // جایگزینی مقادیر پیش‌فرض با مقادیر استخراج‌شده
+      fid = embedParams.fid || fid;
+      username = embedParams.username || username;
+      remainingTipAllowance =
+        embedParams.remainingTipAllowance || remainingTipAllowance;
+      tipAllowance = embedParams.tipAllowance || tipAllowance;
+      tipped = embedParams.tipped || tipped;
+      displayPoints = embedParams.points || displayPoints;
 
-  if (wallets.length > 0) {
-    console.log("Checking points for all user wallets:");
-    for (const wallet of wallets) {
-      const points = await getPointsByWallet(wallet);
-      if (points) {
-        displayPoints = points; // اگر حداقل یک کیف پول points داشته باشد
-        break; // بلافاصله از حلقه خارج می‌شویم
-      }
+      console.log("Replaced default values with embeds[]:", {
+        fid,
+        username,
+        tipAllowance,
+        remainingTipAllowance,
+        tipped,
+        displayPoints,
+      });
+    } catch (error) {
+      console.error("Error parsing embeds[] URL:", error);
     }
-  } else {
-    console.log("No wallets found for this user.");
   }
 
-  // متن کست پیش‌فرض
-  // تغییر در تابع frame برای ساخت لینک کست
-const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
-  "Check Your Degen State\nFrame By @Jeyloo\n"
-)}&embeds[]=${encodeURIComponent(
-  "https://degen-state.onrender.com/page=stats" // لینک تصویر وضعیت کاربر که آمارها را شامل می‌شود
-)}`;
+  // تشخیص کلیک دکمه
+  const { buttonValue } = c;
+  const isMyState = buttonValue === "my_state";
 
+  // اگر دکمه My State کلیک شود
+  if (isMyState) {
+    console.log("Fetching state for the current user...");
 
+    // دریافت FID از Neynar
+    const userData = c.var as NeynarVariables;
+    const {
+      username: interactorUsername,
+      fid: interactorFid,
+      custodyAddress,
+      verifiedAddresses,
+    } = userData.interactor || {};
 
-  // بازگشت پاسخ با تصویر و کامپوننت‌های مورد نیاز
+    if (interactorFid) {
+      fid = interactorFid.toString();
+    }
+
+    // دریافت Allowance برای FID
+    const allowanceData = await getTodayAllowance(fid);
+    tipAllowance = allowanceData.tipAllowance;
+    remainingTipAllowance = allowanceData.remainingTipAllowance;
+    tipped = allowanceData.tipped;
+
+    // بررسی کیف‌پول‌ها برای Points
+    const wallets: string[] = [];
+    if (verifiedAddresses?.ethAddresses) {
+      wallets.push(...verifiedAddresses.ethAddresses);
+    }
+    if (custodyAddress) {
+      wallets.push(custodyAddress);
+    }
+
+    if (wallets.length > 0) {
+      console.log("Checking points for user wallets...");
+      for (const wallet of wallets) {
+        const points = await getPointsByWallet(wallet);
+        if (points) {
+          displayPoints = points;
+          break;
+        }
+      }
+    } else {
+      console.log("No wallets found for the user.");
+    }
+
+    // تنظیم نام کاربری
+    username = interactorUsername || "unknown";
+
+    console.log("Fetched state:", {
+      fid,
+      username,
+      tipAllowance,
+      remainingTipAllowance,
+      tipped,
+      displayPoints,
+    });
+  }
+
+  // ایجاد URL برای Share
+  const urlParams = new URLSearchParams({
+    fid,
+    username,
+    tipAllowance,
+    remainingTipAllowance,
+    tipped,
+    points: displayPoints,
+  });
+
+  const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
+    "Check Your Degen State\nFrame By @Jeyloo\n"
+  )}&embeds[]=${encodeURIComponent(
+    `https://2bd3-204-18-42-241.ngrok-free.app/?${urlParams.toString()}`
+  )}`;
+
+  // بازگشت پاسخ با مقادیر به‌روز شده
   return c.res({
     image: (
       <div
@@ -215,10 +270,10 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
           alignItems: "center",
           justifyContent: "center",
           textAlign: "center",
-          fontFamily: "'Lilita One', sans-serif", // استفاده از فونت Lilita One
+          fontFamily: "'Lilita One', sans-serif",
         }}
       >
-        {/* تصویر اصلی فریم */}
+        {/* تصویر اصلی */}
         <img
           src="https://i.imgur.com/XznXt9o.png"
           alt="Interactive Frog Frame"
@@ -232,25 +287,7 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
             zIndex: 0,
           }}
         />
-
-        {/* تصویر پروفایل */}
-        {pfpUrl && (
-          <img
-            src={pfpUrl}
-            alt="Profile Picture"
-            style={{
-              width: "223px",
-              height: "223px",
-              borderRadius: "50%",
-              position: "absolute",
-              top: "3.8%",
-              left: "25.85%",
-              zIndex: 1,
-            }}
-          />
-        )}
-
-        {/* نام کاربری */}
+        {/* اطلاعات کاربر */}
         {username && (
           <div
             style={{
@@ -267,8 +304,6 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
             {username}
           </div>
         )}
-
-        {/* Remaining Tip Allowance */}
         {remainingTipAllowance && (
           <div
             style={{
@@ -285,8 +320,6 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
             {remainingTipAllowance}
           </div>
         )}
-
-        {/* Tip Allowance */}
         {tipAllowance && (
           <div
             style={{
@@ -303,44 +336,37 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
             {tipAllowance}
           </div>
         )}
-
-        {/* Tipped */}
-{tipped && (
-  <div
-    style={{
-      color: "#2E073F",
-      fontSize: "45px",
-      fontWeight: "50",
-      position: "absolute",
-      top: "89%",
-      left: "52%",
-      transform: "translate(-50%, -50%)",
-      zIndex: 2,
-    }}
-  >
-    {`${tipped}`}
-  </div>
-)}
-
-
-        {/* Points */}
+        {tipped && (
+          <div
+            style={{
+              color: "#2E073F",
+              fontSize: "45px",
+              fontWeight: "50",
+              position: "absolute",
+              top: "89%",
+              left: "52%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 2,
+            }}
+          >
+            {`${tipped}`}
+          </div>
+        )}
         <div
           style={{
-            color:"#674188",
+            color: "#674188",
             fontSize: "45px",
             fontWeight: "100",
             position: "absolute",
             top: "40%",
             left: "67%",
-            transform: "translate(-50%, -50%) rotate(14deg)", // چرخاندن متن به زاویه 15 درجه
+            transform: "translate(-50%, -50%) rotate(14deg)",
             zIndex: 2,
           }}
         >
           {`${displayPoints}`}
         </div>
-
-        {/* FID در صورت کلیک روی My State */}
-        {showFid && fid && (
+        {fid && (
           <div
             style={{
               color: "yellow",
@@ -363,14 +389,4 @@ const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent
       <Button.Link href={composeCastUrl}>Share</Button.Link>,
     ],
   });
-});
-
-// راه‌اندازی سرور
-const port = 5173;
-console.log(`Server is running on port ${port}`);
-
-devtools(app, { serveStatic });
-serve({
-  fetch: app.fetch,
-  port,
 });
