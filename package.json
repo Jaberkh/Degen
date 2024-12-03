@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "frog dev",
     "serve": "tsx src/index.tsx"
+ "start": "node index.tsx"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
