@@ -254,7 +254,7 @@ app.frame("/", async (c) => {
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
     "Check Your Degen State\nFrame By @Jeyloo\n"
   )}&embeds[]=${encodeURIComponent(
-    `https://2bd3-204-18-42-241.ngrok-free.app/?${urlParams.toString()}`
+    `https://degen-98py.onrender.com/?${urlParams.toString()}`
   )}`;
 
   // بازگشت پاسخ با مقادیر به‌روز شده
