@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "frog dev", // اجرای پروژه در حالت توسعه
-    "serve": "tsx src/index.tsx", // اجرای فایل اصلی با tsx
-    "start": "tsx src/index.tsx" // استفاده برای تولید در Render
+    "dev": "frog dev", 
+    "serve": "tsx src/index.tsx", 
+    "start": "tsx src/index.tsx" 
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
