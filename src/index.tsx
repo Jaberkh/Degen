@@ -197,7 +197,7 @@ app.frame("/", async (c) => {
 const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
   "Check Your Degen State\nFrame By @Jeyloo\n"
 )}&embeds[]=${encodeURIComponent(
-  "https://f685-109-61-80-227.ngrok-free.app/page=stats" // لینک تصویر وضعیت کاربر که آمارها را شامل می‌شود
+  "https://degen-state.onrender.com/page=stats" // لینک تصویر وضعیت کاربر که آمارها را شامل می‌شود
 )}`;
 
 
