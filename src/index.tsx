@@ -261,7 +261,7 @@ app.frame("/", async (c) => {
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
     "Check Your Degen State\nFrame By @jeyloo\n"
   )}&embeds[]=${encodeURIComponent(
-    `https://7dd9-16-24-71-66.ngrok-free.app/?${urlParams.toString()}`
+    `https://degen-state.onrender.com/?${urlParams.toString()}`
   )}`;
 
   console.log("Generated Share URL:", composeCastUrl);
