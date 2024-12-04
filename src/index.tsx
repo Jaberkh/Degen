@@ -74,11 +74,9 @@ interface PointsAPIResponse {
 // تابع برای دریافت Points بر اساس Wallet
 const getPointsByWallet = async (wallet: string): Promise<string | null> => {
   const apiUrl = `https://api.degen.tips/airdrop2/current/points?wallet=${wallet}`;
-
   try {
     const response = await fetch(apiUrl);
     const data = (await response.json()) as PointsAPIResponse[];
-
     if (Array.isArray(data) && data.length > 0) {
       return data[0].points;
     } else {
@@ -110,18 +108,15 @@ const getTodayAllowance = async (
   try {
     const response = await fetch(apiUrl);
     const data = await response.json();
-
     if (Array.isArray(data)) {
       const todayAllowance = data.find((item: { snapshot_day?: string }) =>
         item.snapshot_day?.startsWith(todayDate)
       );
-
       if (todayAllowance) {
         tipAllowance = todayAllowance.tip_allowance || "0";
         remainingTipAllowance = todayAllowance.remaining_tip_allowance || "0";
         const totalTipped =
           Number(tipAllowance) - Number(remainingTipAllowance);
-
         tipped = totalTipped > 0 ? totalTipped.toString() : "0";
       } else {
         console.log("No allowances found for today.");
@@ -138,87 +133,89 @@ const getTodayAllowance = async (
 
 // تابع frame
 app.frame("/", async (c) => {
-  // مقادیر پیش‌فرض
-  let fid = defaultFid;
-  let username = "unknown";
-  let remainingTipAllowance = "N/A";
-  let tipAllowance = "N/A";
-  let tipped = "N/A";
-  let displayPoints = "N/A";
-
-  // بررسی وجود پارامترهای embeds[] در URL
+  // دریافت query پارامترها
   const query = c.req.query();
-  let paramsFromEmbeds: Record<string, string> = {};
 
-  console.log("Query Parameters:", query);
+  // مقادیر اولیه (پیش‌فرض خالی)
+  let fid = query.fid || "";
+  let username = query.username || "";
+  let tipAllowance = query.tipAllowance || "";
+  let remainingTipAllowance = query.remainingTipAllowance || "";
+  let tipped = query.tipped || "";
+  let displayPoints = query.points || "";
+  let pfpUrl = query.pfpUrl || "";
+  let imageWidth = "225"; // مقدار پیش‌فرض عرض تصویر
+  let imageHeight = "225"; // مقدار پیش‌فرض ارتفاع تصویر
+  let imageTop = "3.85"; // مقدار پیش‌فرض موقعیت عمودی
+  let imageLeft = "25.8"; // مقدار پیش‌فرض موقعیت افقی
 
+  // بررسی و دیکد کردن embeds[] اگر موجود باشد
   if (query["embeds[]"]) {
     try {
       const decodedUrl = decodeURIComponent(query["embeds[]"]);
-      console.log("Decoded URL:", decodedUrl);
       const embedUrl = new URL(decodedUrl);
-      paramsFromEmbeds = Object.fromEntries(embedUrl.searchParams.entries());
-      console.log("Extracted Parameters from embeds[]:", paramsFromEmbeds);
+      const paramsFromEmbeds = Object.fromEntries(embedUrl.searchParams.entries());
+
+      console.log("Decoded Parameters from embeds[]:", paramsFromEmbeds);
+
+      // مقداردهی مجدد از embeds[]
+      fid = paramsFromEmbeds.fid || fid;
+      username = paramsFromEmbeds.username || username;
+      tipAllowance = paramsFromEmbeds.tipAllowance || tipAllowance;
+      remainingTipAllowance =
+        paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
+      tipped = paramsFromEmbeds.tipped || tipped;
+      displayPoints = paramsFromEmbeds.points || displayPoints;
+      pfpUrl = paramsFromEmbeds.pfpUrl || pfpUrl;
+      imageWidth = paramsFromEmbeds.imageWidth || imageWidth;
+      imageHeight = paramsFromEmbeds.imageHeight || imageHeight;
+      imageTop = paramsFromEmbeds.imageTop || imageTop;
+      imageLeft = paramsFromEmbeds.imageLeft || imageLeft;
     } catch (error) {
-      console.error("Error parsing embeds[] URL:", error);
+      console.error("Error decoding embeds[]:", error);
     }
   }
 
-  // جایگزینی مقادیر پیش‌فرض با مقادیر استخراج‌شده از URL
-  fid = paramsFromEmbeds.fid || fid;
-  username = paramsFromEmbeds.username || username;
-  tipAllowance = paramsFromEmbeds.tipAllowance || tipAllowance;
-  remainingTipAllowance = paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
-  tipped = paramsFromEmbeds.tipped || tipped;
-  displayPoints = paramsFromEmbeds.points || displayPoints;
-
-  console.log("Final values after processing URL parameters:", {
+  console.log("Initial query parameters after embeds processing:");
+  console.log({
     fid,
     username,
     tipAllowance,
     remainingTipAllowance,
     tipped,
     displayPoints,
+    pfpUrl,
+    imageWidth,
+    imageHeight,
+    imageTop,
+    imageLeft,
   });
 
   // تشخیص کلیک دکمه
   const { buttonValue } = c;
   const isMyState = buttonValue === "my_state";
 
-  // اگر دکمه My State کلیک شود
+  // اگر دکمه My State کلیک شود، مقدار Fetched state را بازیابی کنید
   if (isMyState) {
     console.log("Fetching state for the current user...");
 
-    // دریافت FID از Neynar
     const userData = c.var as NeynarVariables;
     const {
       username: interactorUsername,
       fid: interactorFid,
       custodyAddress,
       verifiedAddresses,
+      pfpUrl: interactorPfpUrl,
     } = userData.interactor || {};
 
-    if (interactorFid) {
-      fid = interactorFid.toString();
-    }
+    fid = interactorFid?.toString() || fid;
+    pfpUrl = interactorPfpUrl || pfpUrl;
 
-    // دریافت Allowance برای FID
-    const allowanceData = await getTodayAllowance(fid);
-    tipAllowance = allowanceData.tipAllowance;
-    remainingTipAllowance = allowanceData.remainingTipAllowance;
-    tipped = allowanceData.tipped;
-
-    // بررسی کیف‌پول‌ها برای Points
     const wallets: string[] = [];
-    if (verifiedAddresses?.ethAddresses) {
-      wallets.push(...verifiedAddresses.ethAddresses);
-    }
-    if (custodyAddress) {
-      wallets.push(custodyAddress);
-    }
+    if (verifiedAddresses?.ethAddresses) wallets.push(...verifiedAddresses.ethAddresses);
+    if (custodyAddress) wallets.push(custodyAddress);
 
     if (wallets.length > 0) {
-      console.log("Checking points for user wallets...");
       for (const wallet of wallets) {
         const points = await getPointsByWallet(wallet);
         if (points) {
@@ -226,15 +223,27 @@ app.frame("/", async (c) => {
           break;
         }
       }
-    } else {
-      console.log("No wallets found for the user.");
     }
 
-    // تنظیم نام کاربری
-    username = interactorUsername || "unknown";
+    const allowanceData = await getTodayAllowance(fid);
+    tipAllowance = allowanceData.tipAllowance || tipAllowance;
+    remainingTipAllowance =
+      allowanceData.remainingTipAllowance || remainingTipAllowance;
+    tipped = allowanceData.tipped || tipped;
+
+    username = interactorUsername || username;
+
+    console.log("Fetched state after user interaction:", {
+      fid,
+      username,
+      tipAllowance,
+      remainingTipAllowance,
+      tipped,
+      displayPoints,
+      pfpUrl,
+    });
   }
 
-  // ایجاد URL برای Share
   const urlParams = new URLSearchParams({
     fid,
     username,
@@ -242,13 +251,20 @@ app.frame("/", async (c) => {
     remainingTipAllowance,
     tipped,
     points: displayPoints,
+    pfpUrl,
+    imageWidth,
+    imageHeight,
+    imageTop,
+    imageLeft,
   });
 
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
     "Check Your Degen State\nFrame By @jeyloo\n"
   )}&embeds[]=${encodeURIComponent(
-    `https://e538-3-65-218-183.ngrok-free.app/?${urlParams.toString()}`
+    `https://7dd9-16-24-71-66.ngrok-free.app/?${urlParams.toString()}`
   )}`;
+
+  console.log("Generated Share URL:", composeCastUrl);
 
   return c.res({
     image: (
@@ -265,7 +281,6 @@ app.frame("/", async (c) => {
           fontFamily: "'Lilita One', sans-serif",
         }}
       >
-        {/* تصویر اصلی */}
         <img
           src="https://i.imgur.com/XznXt9o.png"
           alt="Interactive Frog Frame"
@@ -279,7 +294,6 @@ app.frame("/", async (c) => {
             zIndex: 0,
           }}
         />
-        {/* اطلاعات کاربر */}
         {username && (
           <div
             style={{
@@ -296,6 +310,24 @@ app.frame("/", async (c) => {
             {username}
           </div>
         )}
+       {pfpUrl && (
+          <img
+            src={pfpUrl}
+            alt="Profile Picture"
+            style={{
+              width: `${imageWidth}px`,
+              height: `${imageHeight}px`,
+              borderRadius: "50%",
+              position: "absolute",
+              top: `${imageTop}%`,
+              left: `${imageLeft}%`,
+              zIndex: 1,
+              objectFit: "cover",
+            }}
+  />
+)}
+
+
         {remainingTipAllowance && (
           <div
             style={{
@@ -303,7 +335,7 @@ app.frame("/", async (c) => {
               fontSize: "50px",
               fontWeight: "100",
               position: "absolute",
-              top: "72%",
+              top: "71.5%",
               left: "52%",
               transform: "translate(-50%, -50%)",
               zIndex: 2,
