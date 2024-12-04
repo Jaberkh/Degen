@@ -147,37 +147,39 @@ app.frame("/", async (c) => {
   let displayPoints = "N/A";
 
   // بررسی وجود پارامترهای embeds[] در URL
-  const embeds = c.req.query()["embeds[]"];
-  if (embeds) {
+  const query = c.req.query();
+  let paramsFromEmbeds: Record<string, string> = {};
+
+  console.log("Query Parameters:", query);
+
+  if (query["embeds[]"]) {
     try {
-      const decodedUrl = decodeURIComponent(embeds);
+      const decodedUrl = decodeURIComponent(query["embeds[]"]);
+      console.log("Decoded URL:", decodedUrl);
       const embedUrl = new URL(decodedUrl);
-
-      // استخراج پارامترها از URL
-      const embedParams = Object.fromEntries(embedUrl.searchParams.entries());
-      console.log("Extracted Parameters from embeds[]:", embedParams);
-
-      // جایگزینی مقادیر پیش‌فرض با مقادیر استخراج‌شده
-      fid = embedParams.fid || fid;
-      username = embedParams.username || username;
-      remainingTipAllowance =
-        embedParams.remainingTipAllowance || remainingTipAllowance;
-      tipAllowance = embedParams.tipAllowance || tipAllowance;
-      tipped = embedParams.tipped || tipped;
-      displayPoints = embedParams.points || displayPoints;
-
-      console.log("Replaced default values with embeds[]:", {
-        fid,
-        username,
-        tipAllowance,
-        remainingTipAllowance,
-        tipped,
-        displayPoints,
-      });
+      paramsFromEmbeds = Object.fromEntries(embedUrl.searchParams.entries());
+      console.log("Extracted Parameters from embeds[]:", paramsFromEmbeds);
     } catch (error) {
       console.error("Error parsing embeds[] URL:", error);
     }
   }
+
+  // جایگزینی مقادیر پیش‌فرض با مقادیر استخراج‌شده از URL
+  fid = paramsFromEmbeds.fid || fid;
+  username = paramsFromEmbeds.username || username;
+  tipAllowance = paramsFromEmbeds.tipAllowance || tipAllowance;
+  remainingTipAllowance = paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
+  tipped = paramsFromEmbeds.tipped || tipped;
+  displayPoints = paramsFromEmbeds.points || displayPoints;
+
+  console.log("Final values after processing URL parameters:", {
+    fid,
+    username,
+    tipAllowance,
+    remainingTipAllowance,
+    tipped,
+    displayPoints,
+  });
 
   // تشخیص کلیک دکمه
   const { buttonValue } = c;
@@ -230,15 +232,6 @@ app.frame("/", async (c) => {
 
     // تنظیم نام کاربری
     username = interactorUsername || "unknown";
-
-    console.log("Fetched state:", {
-      fid,
-      username,
-      tipAllowance,
-      remainingTipAllowance,
-      tipped,
-      displayPoints,
-    });
   }
 
   // ایجاد URL برای Share
@@ -252,12 +245,11 @@ app.frame("/", async (c) => {
   });
 
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
-    "Check Your Degen State\nFrame By @Jeyloo\n"
+    "Check Your Degen State\nFrame By @jeyloo\n"
   )}&embeds[]=${encodeURIComponent(
-    `https://degen-state.onrender.com/?${urlParams.toString()}`
+    `https://e538-3-65-218-183.ngrok-free.app/?${urlParams.toString()}`
   )}`;
 
-  // بازگشت پاسخ با مقادیر به‌روز شده
   return c.res({
     image: (
       <div
@@ -389,4 +381,14 @@ app.frame("/", async (c) => {
       <Button.Link href={composeCastUrl}>Share</Button.Link>,
     ],
   });
+});
+
+// راه‌اندازی سرور
+const port = 5173;
+console.log(`Server is running on port ${port}`);
+
+devtools(app, { serveStatic });
+serve({
+  fetch: app.fetch,
+  port,
 });
