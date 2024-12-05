@@ -16,6 +16,7 @@ if (!AIRSTACK_API_KEY) {
   throw new Error("AIRSTACK_API_KEY is missing");
 }
 
+// تعریف برنامه Frog
 export const app = new Frog({
   title: "Frog Frame",
   imageAspectRatio: "1:1",
@@ -129,22 +130,45 @@ app.post("/shorten", async (c) => {
 
   const urlParams = new URLSearchParams(Object.entries(query));
   const id = generateHash(urlParams);
-  paramStore.set(id, urlParams); // ذخیره پارامترها بر اساس ID
+  paramStore.set(id, urlParams);
 
   return c.json({ id, shortUrl: `https://degen-state.onrender.com/${id}` });
 });
 
-// Endpoint برای بازیابی لینک از روی ID
+// Endpoint برای بازیابی لینک از روی ID و نمایش متا تگ
 app.get("/:id", async (c) => {
   const id = c.req.param("id");
   const params = paramStore.get(id);
 
   if (!params) {
-    return c.json({ error: "Invalid ID" }, 404);
+    return c.html("<h1>Invalid ID</h1>", 404);
   }
 
   const redirectUrl = `https://degen-state.onrender.com/?${params.toString()}`;
-  return c.redirect(redirectUrl);
+  const ogTitle = "Check Your Degen State";
+  const ogDescription = "Interactive Frog Frame for your Degen State.";
+  const ogImage = "https://i.imgur.com/XznXt9o.png";
+
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <meta property="og:title" content="${ogTitle}" />
+      <meta property="og:description" content="${ogDescription}" />
+      <meta property="og:image" content="${ogImage}" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="1200" />
+      <meta property="og:type" content="website" />
+      <meta http-equiv="refresh" content="0;url=${redirectUrl}" />
+      <title>Redirecting...</title>
+    </head>
+    <body>
+      <p>Redirecting...</p>
+    </body>
+    </html>
+  `);
 });
 
 // افزودن میان‌افزار neynar
