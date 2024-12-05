@@ -5,18 +5,17 @@ import { devtools } from "frog/dev";
 import { neynar, type NeynarVariables } from "frog/middlewares";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 // بارگذاری متغیرهای محیطی از فایل .env
 dotenv.config();
 
-// بررسی کلید API
 const AIRSTACK_API_KEY = process.env.AIRSTACK_API_KEY;
 if (!AIRSTACK_API_KEY) {
   console.error("AIRSTACK_API_KEY is not defined in the environment variables");
   throw new Error("AIRSTACK_API_KEY is missing");
 }
 
-// تعریف اپلیکیشن Frog با پیکربندی اولیه
 export const app = new Frog({
   title: "Frog Frame",
   imageAspectRatio: "1:1",
@@ -47,21 +46,14 @@ export const app = new Frog({
   },
 });
 
-// افزودن میان‌افزار neynar
-app.use(
-  neynar({
-    apiKey: "057737BD-2028-4BC0-BE99-D1359BFD6BFF",
-    features: ["interactor", "cast"],
-  })
-);
+// ذخیره موقت برای شناسه‌ها و پارامترها
+const paramStore = new Map<string, URLSearchParams>();
 
-// ارائه فایل‌های استاتیک از پوشه public
-app.use("/*", serveStatic({ root: "./public" }));
+// تابع تولید هش یکتا برای پارامترها
+function generateHash(params: URLSearchParams): string {
+  return crypto.createHash("sha256").update(params.toString()).digest("hex").slice(0, 8);
+}
 
-// مقدار پیش‌فرض fid
-const defaultFid = "50000";
-
-// نوع پاسخ برای Points API
 interface PointsAPIResponse {
   fid: string;
   wallet_address: string;
@@ -71,7 +63,7 @@ interface PointsAPIResponse {
   fname: string;
 }
 
-// تابع برای دریافت Points بر اساس Wallet
+// تعریف getPointsByWallet
 const getPointsByWallet = async (wallet: string): Promise<string | null> => {
   const apiUrl = `https://api.degen.tips/airdrop2/current/points?wallet=${wallet}`;
   try {
@@ -91,7 +83,7 @@ const getPointsByWallet = async (wallet: string): Promise<string | null> => {
   }
 };
 
-// تابع برای دریافت Allowance روزانه
+// تعریف getTodayAllowance
 const getTodayAllowance = async (
   fid: string
 ): Promise<{
@@ -118,11 +110,7 @@ const getTodayAllowance = async (
         const totalTipped =
           Number(tipAllowance) - Number(remainingTipAllowance);
         tipped = totalTipped > 0 ? totalTipped.toString() : "0";
-      } else {
-        console.log("No allowances found for today.");
       }
-    } else {
-      console.warn("Data is not in the expected format:", data);
     }
   } catch (error) {
     console.error("Error fetching today's allowances:", error);
@@ -131,12 +119,49 @@ const getTodayAllowance = async (
   return { tipAllowance, remainingTipAllowance, tipped };
 };
 
-// تابع frame
-app.frame("/", async (c) => {
-  // دریافت query پارامترها
+// Endpoint برای ایجاد لینک کوتاه
+app.post("/shorten", async (c) => {
   const query = c.req.query();
 
-  // مقادیر اولیه (پیش‌فرض خالی)
+  if (!query) {
+    return c.json({ error: "Missing query parameters" }, 400);
+  }
+
+  const urlParams = new URLSearchParams(Object.entries(query));
+  const id = generateHash(urlParams);
+  paramStore.set(id, urlParams); // ذخیره پارامترها بر اساس ID
+
+  return c.json({ id, shortUrl: `https://degen-state.onrender.com/${id}` });
+});
+
+// Endpoint برای بازیابی لینک از روی ID
+app.get("/:id", async (c) => {
+  const id = c.req.param("id");
+  const params = paramStore.get(id);
+
+  if (!params) {
+    return c.json({ error: "Invalid ID" }, 404);
+  }
+
+  const redirectUrl = `https://degen-state.onrender.com/?${params.toString()}`;
+  return c.redirect(redirectUrl);
+});
+
+// افزودن میان‌افزار neynar
+app.use(
+  neynar({
+    apiKey: "057737BD-2028-4BC0-BE99-D1359BFD6BFF",
+    features: ["interactor", "cast"],
+  })
+);
+
+// ارائه فایل‌های استاتیک از پوشه public
+app.use("/*", serveStatic({ root: "./public" }));
+
+// تابع frame
+app.frame("/", async (c) => {
+  const query = c.req.query();
+
   let fid = query.fid || "";
   let username = query.username || "";
   let tipAllowance = query.tipAllowance || "";
@@ -144,26 +169,21 @@ app.frame("/", async (c) => {
   let tipped = query.tipped || "";
   let displayPoints = query.points || "";
   let pfpUrl = query.pfpUrl || "";
-  let imageWidth = "225"; // مقدار پیش‌فرض عرض تصویر
-  let imageHeight = "225"; // مقدار پیش‌فرض ارتفاع تصویر
-  let imageTop = "3.85"; // مقدار پیش‌فرض موقعیت عمودی
-  let imageLeft = "25.8"; // مقدار پیش‌فرض موقعیت افقی
+  let imageWidth = "225";
+  let imageHeight = "225";
+  let imageTop = "3.85";
+  let imageLeft = "25.8";
 
-  // بررسی و دیکد کردن embeds[] اگر موجود باشد
   if (query["embeds[]"]) {
     try {
       const decodedUrl = decodeURIComponent(query["embeds[]"]);
       const embedUrl = new URL(decodedUrl);
       const paramsFromEmbeds = Object.fromEntries(embedUrl.searchParams.entries());
 
-      console.log("Decoded Parameters from embeds[]:", paramsFromEmbeds);
-
-      // مقداردهی مجدد از embeds[]
       fid = paramsFromEmbeds.fid || fid;
       username = paramsFromEmbeds.username || username;
       tipAllowance = paramsFromEmbeds.tipAllowance || tipAllowance;
-      remainingTipAllowance =
-        paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
+      remainingTipAllowance = paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
       tipped = paramsFromEmbeds.tipped || tipped;
       displayPoints = paramsFromEmbeds.points || displayPoints;
       pfpUrl = paramsFromEmbeds.pfpUrl || pfpUrl;
@@ -176,29 +196,10 @@ app.frame("/", async (c) => {
     }
   }
 
-  console.log("Initial query parameters after embeds processing:");
-  console.log({
-    fid,
-    username,
-    tipAllowance,
-    remainingTipAllowance,
-    tipped,
-    displayPoints,
-    pfpUrl,
-    imageWidth,
-    imageHeight,
-    imageTop,
-    imageLeft,
-  });
-
-  // تشخیص کلیک دکمه
   const { buttonValue } = c;
   const isMyState = buttonValue === "my_state";
 
-  // اگر دکمه My State کلیک شود، مقدار Fetched state را بازیابی کنید
   if (isMyState) {
-    console.log("Fetching state for the current user...");
-
     const userData = c.var as NeynarVariables;
     const {
       username: interactorUsername,
@@ -227,21 +228,10 @@ app.frame("/", async (c) => {
 
     const allowanceData = await getTodayAllowance(fid);
     tipAllowance = allowanceData.tipAllowance || tipAllowance;
-    remainingTipAllowance =
-      allowanceData.remainingTipAllowance || remainingTipAllowance;
+    remainingTipAllowance = allowanceData.remainingTipAllowance || remainingTipAllowance;
     tipped = allowanceData.tipped || tipped;
 
     username = interactorUsername || username;
-
-    console.log("Fetched state after user interaction:", {
-      fid,
-      username,
-      tipAllowance,
-      remainingTipAllowance,
-      tipped,
-      displayPoints,
-      pfpUrl,
-    });
   }
 
   const urlParams = new URLSearchParams({
@@ -258,12 +248,13 @@ app.frame("/", async (c) => {
     imageLeft,
   });
 
+  const id = generateHash(urlParams);
+  paramStore.set(id, urlParams);
+
+  const shortUrl = `https://degen-state.onrender.com/${id}`;
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
     "Check Your Degen State\nFrame By @jeyloo\n"
-  )}&embeds[]=${encodeURIComponent(
-    `https://degen-state.onrender.com/?${urlParams.toString()}`
-  )}`;
-
+  )}&embeds[]=${encodeURIComponent(shortUrl)}`;
   console.log("Generated Share URL:", composeCastUrl);
 
   return c.res({
