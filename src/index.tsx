@@ -161,11 +161,15 @@ app.get("/:id", async (c) => {
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="1200" />
       <meta property="og:type" content="website" />
-      <meta http-equiv="refresh" content="0;url=${redirectUrl}" />
-      <title>Redirecting...</title>
+      <title>${ogTitle}</title>
     </head>
     <body>
-      <p>Redirecting...</p>
+      <script>
+        setTimeout(() => {
+          window.location.href = "${redirectUrl}";
+        }, 2000);
+      </script>
+      <p>Redirecting to your frame...</p>
     </body>
     </html>
   `);
@@ -198,6 +202,7 @@ app.frame("/", async (c) => {
   let imageTop = "3.85";
   let imageLeft = "25.8";
 
+  // منطق بازنویسی مقادیر مانند کد شما بدون تغییر باقی مانده است
   if (query["embeds[]"]) {
     try {
       const decodedUrl = decodeURIComponent(query["embeds[]"]);
@@ -218,44 +223,6 @@ app.frame("/", async (c) => {
     } catch (error) {
       console.error("Error decoding embeds[]:", error);
     }
-  }
-
-  const { buttonValue } = c;
-  const isMyState = buttonValue === "my_state";
-
-  if (isMyState) {
-    const userData = c.var as NeynarVariables;
-    const {
-      username: interactorUsername,
-      fid: interactorFid,
-      custodyAddress,
-      verifiedAddresses,
-      pfpUrl: interactorPfpUrl,
-    } = userData.interactor || {};
-
-    fid = interactorFid?.toString() || fid;
-    pfpUrl = interactorPfpUrl || pfpUrl;
-
-    const wallets: string[] = [];
-    if (verifiedAddresses?.ethAddresses) wallets.push(...verifiedAddresses.ethAddresses);
-    if (custodyAddress) wallets.push(custodyAddress);
-
-    if (wallets.length > 0) {
-      for (const wallet of wallets) {
-        const points = await getPointsByWallet(wallet);
-        if (points) {
-          displayPoints = points;
-          break;
-        }
-      }
-    }
-
-    const allowanceData = await getTodayAllowance(fid);
-    tipAllowance = allowanceData.tipAllowance || tipAllowance;
-    remainingTipAllowance = allowanceData.remainingTipAllowance || remainingTipAllowance;
-    tipped = allowanceData.tipped || tipped;
-
-    username = interactorUsername || username;
   }
 
   const urlParams = new URLSearchParams({
