@@ -5,9 +5,7 @@ import { devtools } from "frog/dev";
 import { neynar, type NeynarVariables } from "frog/middlewares";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
-import crypto from "crypto";
 
-// بارگذاری متغیرهای محیطی از فایل .env
 dotenv.config();
 
 const AIRSTACK_API_KEY = process.env.AIRSTACK_API_KEY;
@@ -16,7 +14,6 @@ if (!AIRSTACK_API_KEY) {
   throw new Error("AIRSTACK_API_KEY is missing");
 }
 
-// تعریف برنامه Frog
 export const app = new Frog({
   title: "Frog Frame",
   imageAspectRatio: "1:1",
@@ -47,13 +44,27 @@ export const app = new Frog({
   },
 });
 
-// ذخیره موقت برای شناسه‌ها و پارامترها
-const paramStore = new Map<string, URLSearchParams>();
+app.use(
+  neynar({
+    apiKey: "057737BD-2028-4BC0-BE99-D1359BFD6BFF",
+    features: ["interactor", "cast"],
+  })
+);
 
-// تابع تولید هش یکتا برای پارامترها
-function generateHash(params: URLSearchParams): string {
-  return crypto.createHash("sha256").update(params.toString()).digest("hex").slice(0, 8);
-}
+app.use("/*", serveStatic({ root: "./public" }));
+
+const defaultFid = "50000";
+
+// متغیر سراسری برای ذخیره اطلاعات کاربر
+const userState: Record<string, any> = {
+  fid: null,
+  username: null,
+  tipAllowance: null,
+  remainingTipAllowance: null,
+  tipped: null,
+  points: null,
+  pfpUrl: null,
+};
 
 interface PointsAPIResponse {
   fid: string;
@@ -64,7 +75,6 @@ interface PointsAPIResponse {
   fname: string;
 }
 
-// تعریف getPointsByWallet
 const getPointsByWallet = async (wallet: string): Promise<string | null> => {
   const apiUrl = `https://api.degen.tips/airdrop2/current/points?wallet=${wallet}`;
   try {
@@ -72,19 +82,14 @@ const getPointsByWallet = async (wallet: string): Promise<string | null> => {
     const data = (await response.json()) as PointsAPIResponse[];
     if (Array.isArray(data) && data.length > 0) {
       return data[0].points;
-    } else {
-      return null;
     }
+    return null;
   } catch (error) {
-    console.error(
-      `Error fetching points for wallet ${wallet}:`,
-      (error as Error).message
-    );
+    console.error(`Error fetching points for wallet ${wallet}:`, (error as Error).message);
     return null;
   }
 };
 
-// تعریف getTodayAllowance
 const getTodayAllowance = async (
   fid: string
 ): Promise<{
@@ -108,10 +113,13 @@ const getTodayAllowance = async (
       if (todayAllowance) {
         tipAllowance = todayAllowance.tip_allowance || "0";
         remainingTipAllowance = todayAllowance.remaining_tip_allowance || "0";
-        const totalTipped =
-          Number(tipAllowance) - Number(remainingTipAllowance);
+        const totalTipped = Number(tipAllowance) - Number(remainingTipAllowance);
         tipped = totalTipped > 0 ? totalTipped.toString() : "0";
+      } else {
+        console.log("No allowances found for today.");
       }
+    } else {
+      console.warn("Data is not in the expected format:", data);
     }
   } catch (error) {
     console.error("Error fetching today's allowances:", error);
@@ -120,134 +128,96 @@ const getTodayAllowance = async (
   return { tipAllowance, remainingTipAllowance, tipped };
 };
 
-// Endpoint برای ایجاد لینک کوتاه
-app.post("/shorten", async (c) => {
-  const query = c.req.query();
-
-  if (!query) {
-    return c.json({ error: "Missing query parameters" }, 400);
+const generateHashId = (fid = "") => {
+  if (!fid) {
+    console.warn("generateHashId: fid is empty or undefined.");
+    return `${Date.now()}--${Math.random().toString(36).substr(2, 6)}`;
   }
+  return `${Date.now()}-${fid}-${Math.random().toString(36).substr(2, 6)}`;
+};
 
-  const urlParams = new URLSearchParams(Object.entries(query));
-  const id = generateHash(urlParams);
-  paramStore.set(id, urlParams);
-
-  return c.json({ id, shortUrl: `https://degen-state.onrender.com/${id}` });
-});
-
-// Endpoint برای بازیابی لینک از روی ID و نمایش متا تگ
-app.get("/:id", async (c) => {
-  const id = c.req.param("id");
-  const params = paramStore.get(id);
-
-  if (!params) {
-    return c.html("<h1>Invalid ID</h1>", 404);
-  }
-
-  const redirectUrl = `https://degen-state.onrender.com/?${params.toString()}`;
-  const ogTitle = "Check Your Degen State";
-  const ogDescription = "Interactive Frog Frame for your Degen State.";
-  const ogImage = "https://i.imgur.com/XznXt9o.png";
-
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <meta property="og:title" content="${ogTitle}" />
-      <meta property="og:description" content="${ogDescription}" />
-      <meta property="og:image" content="${ogImage}" />
-      <meta property="og:image:width" content="1200" />
-      <meta property="og:image:height" content="1200" />
-      <meta property="og:type" content="website" />
-      <title>${ogTitle}</title>
-    </head>
-    <body>
-      <script>
-        setTimeout(() => {
-          window.location.href = "${redirectUrl}";
-        }, 2000);
-      </script>
-      <p>Redirecting to your frame...</p>
-    </body>
-    </html>
-  `);
-});
-
-// افزودن میان‌افزار neynar
-app.use(
-  neynar({
-    apiKey: "057737BD-2028-4BC0-BE99-D1359BFD6BFF",
-    features: ["interactor", "cast"],
-  })
-);
-
-// ارائه فایل‌های استاتیک از پوشه public
-app.use("/*", serveStatic({ root: "./public" }));
-
-// تابع frame
 app.frame("/", async (c) => {
   const query = c.req.query();
 
-  let fid = query.fid || "";
-  let username = query.username || "";
-  let tipAllowance = query.tipAllowance || "";
-  let remainingTipAllowance = query.remainingTipAllowance || "";
-  let tipped = query.tipped || "";
-  let displayPoints = query.points || "";
-  let pfpUrl = query.pfpUrl || "";
-  let imageWidth = "225";
-  let imageHeight = "225";
-  let imageTop = "3.85";
-  let imageLeft = "25.8";
+  let {
+    fid = userState.fid || "",
+    username = userState.username || "",
+    tipAllowance = userState.tipAllowance || "",
+    remainingTipAllowance = userState.remainingTipAllowance || "",
+    tipped = userState.tipped || "",
+    points: displayPoints = userState.points || "",
+    pfpUrl = userState.pfpUrl || "",
+    imageWidth = "225",
+    imageHeight = "225",
+    imageTop = "3.85",
+    imageLeft = "25.8",
+  } = query;
 
-  // منطق بازنویسی مقادیر مانند کد شما بدون تغییر باقی مانده است
-  if (query["embeds[]"]) {
-    try {
-      const decodedUrl = decodeURIComponent(query["embeds[]"]);
-      const embedUrl = new URL(decodedUrl);
-      const paramsFromEmbeds = Object.fromEntries(embedUrl.searchParams.entries());
+  const hashid = query.hashid || "";
+  console.log("Received hashid:", hashid);
 
-      fid = paramsFromEmbeds.fid || fid;
-      username = paramsFromEmbeds.username || username;
-      tipAllowance = paramsFromEmbeds.tipAllowance || tipAllowance;
-      remainingTipAllowance = paramsFromEmbeds.remainingTipAllowance || remainingTipAllowance;
-      tipped = paramsFromEmbeds.tipped || tipped;
-      displayPoints = paramsFromEmbeds.points || displayPoints;
-      pfpUrl = paramsFromEmbeds.pfpUrl || pfpUrl;
-      imageWidth = paramsFromEmbeds.imageWidth || imageWidth;
-      imageHeight = paramsFromEmbeds.imageHeight || imageHeight;
-      imageTop = paramsFromEmbeds.imageTop || imageTop;
-      imageLeft = paramsFromEmbeds.imageLeft || imageLeft;
-    } catch (error) {
-      console.error("Error decoding embeds[]:", error);
+  if (hashid) {
+    const parts = hashid.split("-");
+    console.log("Hashid parts:", parts);
+    if (parts.length > 2 && parts[1]) {
+      fid = parts[1];
+      console.log("Extracted fid:", fid);
+    } else {
+      console.warn("Invalid hashid format or missing fid:", hashid);
     }
   }
 
-  const urlParams = new URLSearchParams({
-    fid,
-    username,
-    tipAllowance,
-    remainingTipAllowance,
-    tipped,
-    points: displayPoints,
-    pfpUrl,
-    imageWidth,
-    imageHeight,
-    imageTop,
-    imageLeft,
-  });
+  const { buttonValue } = c;
+  const isMyState = buttonValue === "my_state";
+  const showFid = buttonValue === "my_state";
 
-  const id = generateHash(urlParams);
-  paramStore.set(id, urlParams);
+  if (isMyState) {
+    const userData = c.var as NeynarVariables;
+    const {
+      username: interactorUsername,
+      fid: interactorFid,
+      custodyAddress,
+      verifiedAddresses,
+      pfpUrl: interactorPfpUrl,
+    } = userData.interactor || {};
 
-  const shortUrl = `https://degen-state.onrender.com/${id}`;
+    console.log("Interactor data:", userData.interactor);
+
+    fid = interactorFid?.toString() || fid;
+    pfpUrl = interactorPfpUrl || pfpUrl;
+
+    userState.fid = fid;
+    userState.pfpUrl = pfpUrl;
+    userState.username = interactorUsername || username;
+
+    const wallets: string[] = [];
+    if (verifiedAddresses?.ethAddresses) wallets.push(...verifiedAddresses.ethAddresses);
+    if (custodyAddress) wallets.push(custodyAddress);
+
+    if (wallets.length > 0) {
+      for (const wallet of wallets) {
+        const points = await getPointsByWallet(wallet);
+        if (points) {
+          userState.points = points;
+          break;
+        }
+      }
+    }
+
+    const allowanceData = await getTodayAllowance(fid);
+    userState.tipAllowance = allowanceData.tipAllowance || tipAllowance;
+    userState.remainingTipAllowance =
+      allowanceData.remainingTipAllowance || remainingTipAllowance;
+    userState.tipped = allowanceData.tipped || tipped;
+  }
+
+  const userFid = userState.fid || defaultFid;
   const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
     "Check Your Degen State\nFrame By @jeyloo\n"
-  )}&embeds[]=${encodeURIComponent(shortUrl)}`;
+  )}&embeds[]=${encodeURIComponent(
+    `https://degen-state.onrender.com?hashid=${generateHashId(userFid)}`
+  )}`;
   console.log("Generated Share URL:", composeCastUrl);
-
   return c.res({
     image: (
       <div
@@ -263,6 +233,7 @@ app.frame("/", async (c) => {
           fontFamily: "'Lilita One', sans-serif",
         }}
       >
+        {/* تصویر اصلی فریم */}
         <img
           src="https://i.imgur.com/XznXt9o.png"
           alt="Interactive Frog Frame"
@@ -276,6 +247,25 @@ app.frame("/", async (c) => {
             zIndex: 0,
           }}
         />
+
+        {/* تصویر پروفایل */}
+        {pfpUrl && (
+          <img
+            src={pfpUrl}
+            alt="Profile Picture"
+            style={{
+              width: "223px",
+              height: "223px",
+              borderRadius: "50%",
+              position: "absolute",
+              top: "3.8%",
+              left: "25.85%",
+              zIndex: 1,
+            }}
+          />
+        )}
+
+        {/* نام کاربری */}
         {username && (
           <div
             style={{
@@ -292,24 +282,8 @@ app.frame("/", async (c) => {
             {username}
           </div>
         )}
-       {pfpUrl && (
-          <img
-            src={pfpUrl}
-            alt="Profile Picture"
-            style={{
-              width: `${imageWidth}px`,
-              height: `${imageHeight}px`,
-              borderRadius: "50%",
-              position: "absolute",
-              top: `${imageTop}%`,
-              left: `${imageLeft}%`,
-              zIndex: 1,
-              objectFit: "cover",
-            }}
-  />
-)}
 
-
+        {/* Remaining Tip Allowance */}
         {remainingTipAllowance && (
           <div
             style={{
@@ -317,7 +291,7 @@ app.frame("/", async (c) => {
               fontSize: "50px",
               fontWeight: "100",
               position: "absolute",
-              top: "71.5%",
+              top: "72%",
               left: "52%",
               transform: "translate(-50%, -50%)",
               zIndex: 2,
@@ -326,6 +300,8 @@ app.frame("/", async (c) => {
             {remainingTipAllowance}
           </div>
         )}
+
+        {/* Tip Allowance */}
         {tipAllowance && (
           <div
             style={{
@@ -342,37 +318,44 @@ app.frame("/", async (c) => {
             {tipAllowance}
           </div>
         )}
-        {tipped && (
-          <div
-            style={{
-              color: "#2E073F",
-              fontSize: "45px",
-              fontWeight: "50",
-              position: "absolute",
-              top: "89%",
-              left: "52%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 2,
-            }}
-          >
-            {`${tipped}`}
-          </div>
-        )}
+
+        {/* Tipped */}
+{tipped && (
+  <div
+    style={{
+      color: "#2E073F",
+      fontSize: "45px",
+      fontWeight: "50",
+      position: "absolute",
+      top: "89%",
+      left: "52%",
+      transform: "translate(-50%, -50%)",
+      zIndex: 2,
+    }}
+  >
+    {`${tipped}`}
+  </div>
+)}
+
+
+        {/* Points */}
         <div
           style={{
-            color: "#674188",
+            color:"#674188",
             fontSize: "45px",
             fontWeight: "100",
             position: "absolute",
             top: "40%",
             left: "67%",
-            transform: "translate(-50%, -50%) rotate(14deg)",
+            transform: "translate(-50%, -50%) rotate(14deg)", // چرخاندن متن به زاویه 15 درجه
             zIndex: 2,
           }}
         >
           {`${displayPoints}`}
         </div>
-        {fid && (
+
+        {/* FID در صورت کلیک روی My State */}
+        {showFid && fid && (
           <div
             style={{
               color: "yellow",
@@ -395,11 +378,13 @@ app.frame("/", async (c) => {
       <Button.Link href={composeCastUrl}>Share</Button.Link>,
     ],
   });
+  console.log("Generated Share Link:", composeCastUrl);
+
 });
 
-// راه‌اندازی سرور
 const port = 5173;
 console.log(`Server is running on port ${port}`);
+
 
 devtools(app, { serveStatic });
 serve({
